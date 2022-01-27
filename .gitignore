@@ -2,3 +2,5 @@
 .Rhistory
 .RData
 .Ruserdata
+all_rds_files/*
+!all_rds_files/create_new.rds
