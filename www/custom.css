@@ -1,0 +1,54 @@
+
+#edit_node {
+    /*background-color: #0078d4;*/
+  width: 330px;
+  position: fixed;
+  z-index: 1;
+  
+  left: 10px;
+  background: #eee;
+  overflow-x: hidden;
+ 
+  
+}
+
+
+
+ 
+.react-container {
+    width: fit-content;
+  
+  left: 10px;
+  background: #eee;
+  
+}
+
+
+
+/*
+
+.css-53 {
+      font-family: "Segoe UI", "Segoe UI Web (West European)", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    font-size: 18px;
+    font-weight: 400;
+    color: #faf9f8;
+    display: block;
+}
+
+.root-63 {
+  
+      font-family: "Segoe UI", "Segoe UI Web (West European)", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    font-size: 14px;
+    font-weight: 600;
+    color: rgb(16 15 15);
+    box-sizing: border-box;
+    box-shadow: none;
+    margin: 0px;
+    display: block;
+    padding: 5px 0px;
+    overflow-wrap: break-word;
+}
+
+*/
