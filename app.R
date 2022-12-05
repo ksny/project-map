@@ -1,186 +1,205 @@
 #import library
-
-
-#library(editData)
-#library(DataEditR)
-#library(tidyverse)
-#library(tidyquant)
-#library(data.tree)
 library(igraph)
 library(networkD3)
-#library(DiagrammeR)
 library(plyr)
 library(data.table)
 library(shiny)
+# remotes::install_github("Appsilon/shiny.react")
+# remotes::install_github("Appsilon/shiny.fluent")
 library(shiny.fluent)
 library(shinyalert)
 library(shinyjs)
 
+
+# dt_shiny <- readRDS("dtNetwork.rds")
+# dt_shiny <- data.table::as.data.table(dt_shiny)
+# #dt_shiny <- rbindlist(list(dt_shiny, data.table(from="Lab_Members", to="New_member", name="New_member")))
+# 
+# 
+# edgeList <- dt_shiny[,1:2]
+# colnames(edgeList) <- c('SourceName', 'TargetName')
+# 
+# #from_choice <- unique(edgeList[["SourceName"]])
+# 
+"%ni%" <- Negate("%in%")
 values <- reactiveValues()
 values$edgeList <- NULL
 
+jscode <- '
+Shiny.addCustomMessageHandler("search_node", function(message) {
+window.find(message)
+});
+'
+
 
 ##### UI -----
-ui <- shiny.fluent::fluentPage( 
+ui <- shiny.fluent::fluentPage(
+  shiny::tags$head(tags$script(HTML(jscode))),
 
   shiny::tags$head(
     shiny::tags$link(href = "custom.css", rel = "stylesheet", type = "text/css")
   ),
   shiny::uiOutput("select_network"),
+  shiny.fluent::ComboBox.shinyInput("search_term", label= "search..", value = NULL),
   shiny::br(),
   shiny::div(
-  shiny.fluent::Checkbox.shinyInput("edit_check", value = FALSE, label="Check to Edit Node", boxSide="end")),
+  shiny.fluent::Checkbox.shinyInput("edit_check", value = FALSE,
+   label = "Check to Edit Node", boxSide = "end")),
   shiny::br(),
   #shiny::br(),
   shiny::uiOutput("edit_node"),
   #shiny.fluent::Slider.shinyInput("charge", value = -800, min= -1200, max=200),
-  networkD3::forceNetworkOutput(outputId = "force_network", width = "100%", height = "900px")
-  
-  
-
-)
+  networkD3::forceNetworkOutput(outputId = "force_network",
+   width = "100%", height = "900px")
+   )
 
 
 #### Server ----
 server <- function(input, output, session) {
-  
   global <- reactiveValues(response = FALSE)
+  delete_dialog <- reactiveValues(response = FALSE)
   session_store <- reactiveValues()
-  
-  
+  #### files list ----
   files_list <- shiny::reactive({
     files <- list.files("all_rds_files/", pattern = ".rds")
-    files <- unlist(strsplit(files,".rds"))
-    files <- lapply(files, function(x) {list(key=x, text=x)})
+    files <- unlist(strsplit(files, ".rds"))
+    files <- lapply(files, function(x) {list(key = x, text = x)})
   })
   
   output$select_network <- shiny::renderUI({
-    shiny.fluent::ComboBox.shinyInput("show_network",
-                                      label="Select Network to Show",
-                                      value = list(key="create_new", text="create_new"),
-                                      options=files_list())
+      shiny.fluent::ComboBox.shinyInput("show_network",
+          label = "Select Network to Show",
+          value = list(key = "create_new", text = "create_new"),
+          options = files_list()
+      )
   })
-  
-  shiny::observeEvent(input$show_network,{
-    file <- input$show_network$text
-    file_path <- paste0("all_rds_files/", file, ".rds")
-    dt_shiny <- readRDS(file_path)
-    
-    dt_shiny <- data.table::as.data.table(dt_shiny)
-    #dt_shiny <- rbindlist(list(dt_shiny, data.table(from="Lab_Members", to="New_member", name="New_member")))
-    
-    
-    edgeList <- dt_shiny[,1:2]
-    colnames(edgeList) <- c('SourceName', 'TargetName')
-    
-    #from_choice <- unique(edgeList[["SourceName"]])
-    
-    values$edgeList <- edgeList
-    
-    
-    
+  #### show network ----
+  shiny::observeEvent(input$show_network, {
+      file <- input$show_network$text
+      file_path <- paste0("all_rds_files/", file, ".rds")
+      dt_shiny <- readRDS(file_path)
+      dt_shiny <- data.table::as.data.table(dt_shiny)
+      edgeList <- dt_shiny[, 1:2]
+      colnames(edgeList) <- c("SourceName", "TargetName")
+      values$edgeList <- edgeList
   })
   
 
-  
-  
+
+  #### Choices for add and delete node ----
   add_choice <- shiny::reactive({
-    from_choice <- unique(values$edgeList[["SourceName"]])
-    to_choice <- unique(values$edgeList[["TargetName"]])
-    add_choice <- union(from_choice, to_choice)
-    add_choice <- lapply(add_choice, function(x) {list(key=x, text=x)})
-    add_choice
+      from_choice <- unique(values$edgeList[["SourceName"]])
+      to_choice <- unique(values$edgeList[["TargetName"]])
+      add_choice <- union(from_choice, to_choice)
+      add_choice <- sort(add_choice)
+      add_choice <- lapply(add_choice, function(x) {
+          list(key = x, text = x)
+      })
+      add_choice
+  })
+  
+  # update search term
+  shiny::observeEvent(input$show_network, {
     
+    
+    search_option <- add_choice()
+    print(search_option)
+    
+    shiny.fluent::updateComboBox.shinyInput(session,"search_term", options=search_option,
+                                            values=NULL,
+                                            allowFreeform = TRUE)
     
   })
   
- # file_name_choice <- reactive({
- #   
- # })
-  
+  shiny::observeEvent(input$search_term, {
+    if (!(is.null(input$search_term))) {
+      print(input$search_term)
+      session$sendCustomMessage("search_node", input$search_term$text)
+    }
+  })
 
-  
+  #### editing start here ----
   output$edit_node <- shiny::renderUI({
-    
-    if (input$edit_check) {
-    shiny::div(
-    
-    #shiny::h4("Add a New Node"),
-    shiny.fluent::Text(variant="large" ,"Add a New Node", block=TRUE),
-    
-    shiny.fluent::Stack(
-      tokens=list(childrenGap=10),
-      horizontal=TRUE,
-      
-      shiny.fluent::ComboBox.shinyInput("add_from",
-                                        
-                                        options=add_choice(),
-                                        label="From",
-                                        allowFreeform=TRUE),
-      shiny.fluent::ComboBox.shinyInput("add_to",
-                                        options=add_choice(),
-                                        label="To",
-                                        allowFreeform=TRUE)
-      
-    ),
-    shiny.fluent::ActionButton.shinyInput("add_node", text="Add this node to network",
-                                          iconProps = list("iconName" = "AddLink")),
-    shiny::br(),
-    shiny.fluent::Text(variant="large" ,"Delete a Node", block=TRUE),
-    
-    shiny.fluent::Stack(
-      tokens=list(childrenGap=10),
-      horizontal=TRUE,
-      shiny.fluent::ComboBox.shinyInput("delete_from",
-                                        
-                                        options=add_choice(),
-                                        label="From",
-                                        allowFreeform=TRUE),
-      shiny.fluent::ComboBox.shinyInput("delete_to",
-                                        options=add_choice(),
-                                        label="To",
-                                        allowFreeform=TRUE)
-      
-    ),
-    shiny.fluent::ActionButton.shinyInput("delete_node", text="Remove this node from network",
+      if (input$edit_check) {
+          shiny::div(
+              shiny.fluent::Text(variant = "large", "Add a New Node", block = TRUE),
+              shiny.fluent::Stack(
+                  tokens = list(childrenGap = 10),
+                  horizontal = TRUE,
+                  shiny.fluent::ComboBox.shinyInput("add_from",
+                      options = add_choice(),
+                      label = "From",
+                      allowFreeform = TRUE
+                  ),
+                  shiny.fluent::ComboBox.shinyInput("add_to",
+                      options = add_choice(),
+                      label = "To",
+                      allowFreeform = TRUE
+                  )
+              ),
+              shiny.fluent::ActionButton.shinyInput("add_node",
+                  text = "Add this node to network",
+                  iconProps = list("iconName" = "AddLink")
+              ),
+              shiny::br(),
+              shiny.fluent::Text(variant = "large", "Delete a Node", block = TRUE),
+              shiny.fluent::Stack(
+                  tokens = list(childrenGap = 10),
+                  horizontal = TRUE,
+                  shiny.fluent::ComboBox.shinyInput("delete_from",
+                      options = add_choice(),
+                      label = "From",
+                      allowFreeform = TRUE
+                  ),
+                  shiny.fluent::ComboBox.shinyInput("delete_to",
+                      options = add_choice(),
+                      label = "To",
+                      allowFreeform = TRUE
+                  )
+              ),
+              shiny.fluent::ActionButton.shinyInput("delete_node",
+                  text = "Remove this node from network",
+                  iconProps = list("iconName" = "RemoveLink")
+              ),
+              shiny::tags$br(),
+              # shiny.fluent::ComboBox.shinyInput("file_name",
+              #
+              #                                   options=add_choice(),
+              #                                   label="From",
+              #                                   allowFreeform=TRUE),
+              shiny.fluent::ComboBox.shinyInput("save_rds",
+                  label = "Overwrite current file or save as new file",
+                  value = list(key = input$show_network$text, text = input$show_network$text),
+                  options = files_list(),
+                  allowFreeform = TRUE
+              ),
+              #
+              shiny.fluent::ActionButton.shinyInput("write_rds",
+                  text = "Save all the changes to RDS file",
+                  iconProps = list("iconName" = "Database")
+              ),
+              shiny::br(),
+              shiny::downloadButton("save_html", "Download Displayed Network",
+                  style = "color: #323130;"
+              ),
+              # shiny.fluent::ActionButton.shinyInput("save_html", text="Download Displayed Network",
+              #                                       iconProps=list("iconName"="Download")),
 
-                                          iconProps = list("iconName"="RemoveLink")),
-    shiny::tags$br(),
-    # shiny.fluent::ComboBox.shinyInput("file_name",
-    #                                   
-    #                                   options=add_choice(),
-    #                                   label="From",
-    #                                   allowFreeform=TRUE),
-    shiny.fluent::ComboBox.shinyInput("save_rds",
-                                      label="Overwrite current file or save as new file",
-                                      value = list(key="dtNetwork", text="dtNetwork"),
-                                      options=files_list(),
-                                      allowFreeform=TRUE),
-    # 
-    shiny.fluent::ActionButton.shinyInput("write_rds", text="Save all the changes to RDS file",
-                                          iconProps=list("iconName"="Database")),
-    
-    shiny::br(),
-    shiny::downloadButton("save_html", "Download Displayed Network",
-                          style="color: #323130;"),
-    shiny::tags$br(),
-    shiny::tags$br()
-    
-      # shiny.fluent::ActionButton.shinyInput("save_html", text="Download Displayed Network",
-      #                                       iconProps=list("iconName"="Download")),
-   
-    
-    
-
-    
-    
-    
-    )}
-    
-    
+              shiny::br(),
+              shiny.fluent::ComboBox.shinyInput("show_delete_rds",
+                  label = "Select Network to Delete",
+                  value = list(key = input$show_network$text, text = input$show_network$text),
+                  options = files_list()
+              ),
+              shiny.fluent::ActionButton.shinyInput("delete_rds",
+                  text = "Delete Selected Network",
+                  iconProps = list("iconName" = "Delete")
+              )
+          )
+      }
   })
   
-  #### observeEvent for add_node ----
+  #### add_node ----
   shiny::observeEvent(input$add_node,{
     #print(values$edgeList)
     from <- input$add_from$text
@@ -190,7 +209,7 @@ server <- function(input, output, session) {
     # print(values$edgeList)
     
   })
-  #### delete node
+  #### delete node ----
   shiny::observeEvent(input$delete_node,{
     #print(values$edgeList)
     from <- input$delete_from$text
@@ -200,6 +219,8 @@ server <- function(input, output, session) {
     # print(values$edgeList)
     
   })
+  
+  #### edit node text ----
   
   observeEvent(input$id, {
     if (input$edit_check) {
@@ -228,7 +249,7 @@ server <- function(input, output, session) {
     }
   })
   
-  
+  #### save network ----
   shiny::observeEvent(input$write_rds,{
     file_name <- paste0(input$save_rds$text, ".rds")
     path <- paste0("all_rds_files/", file_name)
@@ -247,12 +268,103 @@ server <- function(input, output, session) {
                                       inputId = "save_rds",
                                       options=files,
                                       allowFreeform=TRUE)
+    shiny.fluent::updateComboBox.shinyInput(session=session,
+                                      inputId = "show_delete_rds",
+                                      options=files)
 
 
 
     
     
   })
+  
+  #### delete network ----
+  
+  
+  observeEvent(input$delete_rds, {
+    txt <- input$show_delete_rds$text
+    show_txt <- paste0("Delete ",txt, "?")
+    
+      shinyalert::shinyalert(title=show_txt,
+	  confirmButtonText = "Yes",html = TRUE, showCancelButton = TRUE,
+      callbackR = function(x) {
+        delete_dialog$response <- x
+      }
+      )
+ 
+  })
+  
+  shiny::observeEvent(delete_dialog$response,{
+    print(delete_dialog$response)
+    if(delete_dialog$response){
+      
+      if (input$show_delete_rds$text %ni% c('dtNetwork','create_new')) {
+        file_name <- paste0(input$show_delete_rds$text, ".rds")
+        path <- paste0("all_rds_files/", file_name)
+        print(path)
+        
+        if (file.exists(path)) {
+          file.remove(path)}
+        files <- list.files("all_rds_files/", pattern = ".rds")
+        
+        files <- unlist(strsplit(files,".rds"))
+        files <- lapply(files, function(x) {list(key=x, text=x)})
+        print(files)
+        
+        shiny.fluent::updateComboBox.shinyInput(session = session,
+                                                inputId = "show_network",
+                                                
+                                                #value = list(key=input$show_network$text, text=input$show_network$text),
+                                                options=files)
+        shiny.fluent::updateComboBox.shinyInput(session=session,
+                                                inputId = "save_rds",
+                                                options=files,
+                                                allowFreeform=TRUE)
+        shiny.fluent::updateComboBox.shinyInput(session = session,
+                                                "show_delete_rds",
+                                                
+                                                options=files)
+      }
+    }
+    delete_dialog <- FALSE
+  })
+  
+  
+  
+  
+  shiny::observeEvent(input$delete_rds,{
+    if (input$show_delete_rds$text %ni% c('dtNetwork','create_new')) {
+    file_name <- paste0(input$show_delete_rds$text, ".rds")
+    path <- paste0("all_rds_files/", file_name)
+    print(path)
+
+    if (file.exists(path)) {
+      file.remove(path)}
+    files <- list.files("all_rds_files/", pattern = ".rds")
+
+    files <- unlist(strsplit(files,".rds"))
+    files <- lapply(files, function(x) {list(key=x, text=x)})
+    print(files)
+
+    shiny.fluent::updateComboBox.shinyInput(session = session,
+                                            inputId = "show_network",
+
+                                            #value = list(key=input$show_network$text, text=input$show_network$text),
+                                            options=files)
+    shiny.fluent::updateComboBox.shinyInput(session=session,
+                                            inputId = "save_rds",
+                                            options=files,
+                                            allowFreeform=TRUE)
+    shiny.fluent::updateComboBox.shinyInput(session = session,
+                                            "show_delete_rds",
+
+                                            options=files)
+
+
+
+
+
+  }})
   
   
   
@@ -281,7 +393,7 @@ server <- function(input, output, session) {
     
     # Define Node Groups (colors)
     nodeList$Group <- nodeList$nName
-    colorGroups <- edgeList$TargetName[which(edgeList$SourceName == edgeList[1,1])]
+    colorGroups <- edgeList$TargetName[which(edgeList$SourceName == 'Snyder_Lab')]
     for (colorGroup in colorGroups) {
       groupTargets <- edgeList$TargetID[which(edgeList$SourceName == colorGroup)]
       nodeList$Group[which(nodeList$ID %in% groupTargets)] <- colorGroup
@@ -295,7 +407,7 @@ server <- function(input, output, session) {
     # methodTargets <- edgeList$TargetID[which(edgeList$SourceName == 'Lab_Members')]
     # nodeList$Group[which(nodeList$ID %in% methodTargets)] <- 'Lab_Members'
     
-    ############################################################################################
+    
     # Calculate some node properties and node similarities that will be used to illustrate 
     # different plotting abilities and add them to the edge and node lists
     
@@ -317,7 +429,7 @@ server <- function(input, output, session) {
     
     rm(dsAll, F1, getNodeID, gD)
     
-    ############################################################################################
+  
     # We will also create a set of colors for each edge, based on their dice similarity values
     # We'll interpolate edge colors based on the using the "colorRampPalette" function, that 
     # returns a function corresponding to a collor palete of "bias" number of elements (in our case, that
@@ -327,31 +439,41 @@ server <- function(input, output, session) {
     edges_col <- sapply(edgeList$diceSim, function(x) colCodes[which(sort(unique(edgeList$diceSim)) == x)])
     
     rm(colCodes, F2)
-    ############################################################################################
-    # Let's create a network
     
-    D3_network_LM <- networkD3::forceNetwork(Links = edgeList, # data frame that contains info about edges
-                                             Nodes = nodeList, # data frame that contains info about nodes
-                                             Source = "SourceID", # ID of source node 
-                                             Target = "TargetID", # ID of target node
-                                             colourScale = JS("d3.scaleOrdinal(d3.schemeCategory10);"),
-                                             # Value = "Weight", # value from the edge list (data frame) that will be used to value/weight relationship amongst nodes
-                                             NodeID = "nName", # value from the node list (data frame) that contains node description we want to use (e.g., node name)
-                                             Nodesize = "nodeBetweenness",  # value from the node list (data frame) that contains value we want to use for a node size
-                                             Group = "Group",  # value from the node list (data frame) that contains value we want to use for node color
-                                             # height = 500, # Size of the plot (vertical)
-                                             # width = 1000,  # Size of the plot (horizontal)
-                                             # fontSize = 20, # Font size
-                                             # linkDistance = networkD3::JS("function(d) { return 10*d.value; }"), # Function to determine distance between any two nodes, uses variables already defined in forceNetwork function (not variables from a data frame)
-                                             # linkWidth = networkD3::JS("function(d) { return d.value/5; }"),# Function to determine link/edge thickness, uses variables already defined in forceNetwork function (not variables from a data frame)
-                                             fontSize = 16,
-                                             charge = -800,
-                                             opacity = 1, # opacity
-                                             zoom = TRUE, # ability to zoom when click on the node
-                                             opacityNoHover = 1, # opacity of labels when static
-                                             linkColour = edges_col, # edge colors
-                                             clickAction="Shiny.onInputChange('id', d.name);"
-                                             
+    ##### create a network ----
+    
+    D3_network_LM <- networkD3::forceNetwork(
+        Links = edgeList, # data frame that contains info about edges
+        Nodes = nodeList, # data frame that contains info about nodes
+        Source = "SourceID", # ID of source node
+        Target = "TargetID", # ID of target node
+        colourScale = JS("d3.scaleOrdinal(d3.schemeCategory10);"),
+        # Value = "Weight",
+        # value from the edge list (data frame) that will be used
+        # to value/weight relationship amongst nodes
+        NodeID = "nName", # value from the node list (data frame)
+        # that contains node description we want to use (e.g., node name)
+        Nodesize = "nodeBetweenness", # value from the node list (data frame)
+        # that contains value we want to use for a node size
+        Group = "Group", # value from the node list (data frame)
+        # that contains value we want to use for node color
+        # height = 500, # Size of the plot (vertical)
+        # width = 1000,  # Size of the plot (horizontal)
+        # fontSize = 20, # Font size
+        # linkDistance = networkD3::JS("function(d) { return 10*d.value; }"),
+        # # Function to determine distance between any two nodes,
+        # uses variables already defined in forceNetwork function
+		# (not variables from a data frame)
+        # linkWidth = networkD3::JS("function(d) { return d.value/5; }"),
+        ## Function to determine link/edge thickness, uses variables already
+        # defined in forceNetwork function (not variables from a data frame)
+        fontSize = 16,
+        charge = -800,
+        opacity = 1, # opacity
+        zoom = TRUE, # ability to zoom when click on the node # nolint
+        opacityNoHover = 1, # opacity of labels when static
+        linkColour = edges_col, # edge colors
+        clickAction = "Shiny.onInputChange('id', d.name);"
     )
     
     # Plot network
@@ -361,7 +483,7 @@ server <- function(input, output, session) {
     
   })
   
-  
+  #### save network as html file -----
   output$save_html <- shiny::downloadHandler(
     filename = function() {
       paste0(input$show_network$text, ".html")
@@ -389,5 +511,5 @@ server <- function(input, output, session) {
   
 }
 
-shinyApp(ui, server)
+shiny::shinyApp(ui, server)
 
